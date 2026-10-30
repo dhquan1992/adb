@@ -1,0 +1,137 @@
+// lang: JavaScript (Userscript), file: yt_adblock.user.js
+// target: YouTube (Chromium/Firefox + Tampermonkey/Violentmonkey)
+// chống ad + bypass adblock detection wall
+
+// ==UserScript==
+// @name         YT AdBlock + Anti-Detection
+// @namespace    noob
+// @version      1.0
+// @match        *://*.youtube.com/*
+// @grant        none
+// @run-at       document-start
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  // ── 1. PATCH XHR + FETCH ĐỂ DROP AD REQUEST ──────────────────────────
+  const AD_HOSTS = [
+    'doubleclick.net', 'googlesyndication.com',
+    'googleadservices.com', 'youtube.com/api/stats/ads',
+    'youtube.com/pagead', 'youtube.com/get_video_info',
+  ];
+
+  const _fetch = window.fetch;
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : input?.url ?? '';
+    if (AD_HOSTS.some(h => url.includes(h))) {
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    }
+    return _fetch.apply(this, arguments);
+  };
+
+  const _open = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    if (AD_HOSTS.some(h => url.includes(h))) {
+      this._blocked = true;
+      return;
+    }
+    return _open.apply(this, arguments);
+  };
+
+  const _send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function () {
+    if (this._blocked) return;
+    return _send.apply(this, arguments);
+  };
+
+  // ── 2. XÓA AD ELEMENT KHI NÓ XUẤT HIỆN ─────────────────────────────
+  const AD_SELECTORS = [
+    '.ad-showing',
+    '.ytp-ad-module',
+    '#player-ads',
+    '#masthead-ad',
+    'ytd-banner-promo-renderer',
+    'ytd-statement-banner-renderer',
+    'ytd-ad-slot-renderer',
+    'ytd-in-feed-ad-layout-renderer',
+    'tp-yt-paper-dialog:has(yt-confirm-dialog-renderer)',
+  ];
+
+  const removeAds = () => {
+    AD_SELECTORS.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => el.remove());
+    });
+
+    // skip video ad đang chạy
+    const video = document.querySelector('video');
+    const adShowing = document.querySelector('.ad-showing');
+    if (video && adShowing) {
+      video.currentTime = video.duration || 9999;
+    }
+  };
+
+  const observer = new MutationObserver(removeAds);
+  const startObserver = () => {
+    observer.observe(document.body, { childList: true, subtree: true });
+  };
+
+  if (document.body) startObserver();
+  else document.addEventListener('DOMContentLoaded', startObserver);
+
+  // ── 3. BYPASS ADBLOCK DETECTION WALL ────────────────────────────────
+  // YouTube inject script check window.ytInitialData và network pattern
+  // Spoof lại bằng cách patch Object.defineProperty
+
+  const _defineProperty = Object.defineProperty;
+  Object.defineProperty = function (obj, prop, descriptor) {
+    if (prop === 'adblock' || prop === '__adblockDetected') {
+      descriptor.value = false;
+      descriptor.writable = false;
+    }
+    return _defineProperty.apply(this, arguments);
+  };
+
+  // xóa dialog "adblock detected" khi nó pop lên
+  const WALL_SELECTORS = [
+    'tp-yt-paper-dialog',
+    'yt-confirm-dialog-renderer',
+    '#header-dismiss-button',
+  ];
+
+  const killWall = () => {
+    WALL_SELECTORS.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+        if (el.innerText?.toLowerCase().includes('ad block') ||
+            el.innerText?.toLowerCase().includes('adblock')) {
+          el.remove();
+        }
+      });
+    });
+
+    // unlock body scroll nếu YouTube lock khi show wall
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+  };
+
+  const wallObserver = new MutationObserver(killWall);
+  const startWallObserver = () => {
+    wallObserver.observe(document.body, { childList: true, subtree: true });
+  };
+
+  if (document.body) startWallObserver();
+  else document.addEventListener('DOMContentLoaded', startWallObserver);
+
+  // ── 4. PATCH YOUTUBE INTERNAL AD FLAG ───────────────────────────────
+  // YouTube đọc playerResponse.adPlacements để biết có ad không
+  const _parse = JSON.parse;
+  JSON.parse = function (text) {
+    const result = _parse.apply(this, arguments);
+    if (result && typeof result === 'object') {
+      if (result.adPlacements) delete result.adPlacements;
+      if (result.playerAds) delete result.playerAds;
+    }
+    return result;
+  };
+
+})();
