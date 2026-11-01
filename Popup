@@ -1,0 +1,68 @@
+// ==UserScript==
+// @name         Chặn Redirect & Popup
+// @namespace    http://tampermonkey.net/
+// @version      1.0.0
+// @description  Ngăn tự động mở trang, redirect JS, popup và meta refresh
+// @author       Sakigun
+// @match        *://*/*
+// @grant        none
+// @run-at       document-start
+// @noframes
+// ==/UserScript==
+
+(() => {
+    'use strict';
+    const block = (type, url) => console.warn(`[BLOCKED] ${type}: ${url}`);
+
+    // 1. Chặn window.open (Popup / Tab mới)
+    window.open = () => null;
+    window.showModalDialog = () => null;
+
+    // 2. Chặn location methods & setters
+    try {
+        if (window.location.assign) window.location.assign = (url) => block('location.assign', url);
+        if (window.location.replace) window.location.replace = (url) => block('location.replace', url);
+        
+        Object.defineProperty(window.location, 'href', { set: (url) => block('location.href', url) });
+        Object.defineProperty(window.location, 'host', { set: (url) => block('location.host', url) });
+        Object.defineProperty(window.location, 'pathname', { set: (url) => block('location.pathname', url) });
+    } catch (e) { console.warn('[-] Không thể khóa location setters'); }
+
+    try {
+        Object.defineProperty(window, 'location', { set: (url) => block('window.location', url) });
+    } catch (e) {}
+
+    // 3. Chặn Meta Refresh
+    const killMeta = () => {
+        document.querySelectorAll('meta[http-equiv="refresh" i]').forEach(m => {
+            block('meta refresh', m.content);
+            m.remove();
+        });
+    };
+
+    // Xử lý cả trường hợp DOM chưa load xong ở document-start
+    const initObserver = () => {
+        killMeta();
+        new MutationObserver(killMeta).observe(document.documentElement, { 
+            childList: true, 
+            subtree: true, 
+            attributes: true 
+        });
+    };
+
+    if (document.documentElement) {
+        initObserver();
+    } else {
+        window.addEventListener('DOMContentLoaded', initObserver);
+    }
+
+    // 4. Chặn auto click & form submit
+    try {
+        HTMLAnchorElement.prototype.click = function() { block('anchor click', this.href); };
+        HTMLFormElement.prototype.submit = function() { block('form submit', this.action); };
+    } catch (e) {}
+
+    // 5. Chặn beforeunload (Không cho trang giữ chân người dùng)
+    window.onbeforeunload = null;
+    window.addEventListener('beforeunload', e => e.preventDefault());
+})();
