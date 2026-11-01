@@ -4,7 +4,7 @@
 
 // ==UserScript==
 // @name         YT AdBlock + Anti-Detection
-// @namespace    noob
+// @namespace    Sakigun
 // @version      1.0
 // @match        *://*.youtube.com/*
 // @grant        none
