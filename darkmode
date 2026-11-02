@@ -1,0 +1,187 @@
+// ==UserScript==
+// @name         Universal Dark Mode
+// @namespace    Sakigun
+// @version      1.0
+// @description  dark mode on any website
+// @match        *://*/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @run-at       document-start
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  // ── CONFIG ───────────────────────────────────────────────────────────
+  const STORAGE_KEY = 'noob_dark_mode';
+  const TOGGLE_KEY  = 'KeyD'; // Alt + D để toggle
+  const STYLE_ID    = '__noob_dark__';
+
+  // ── CSS INVERSION + SELECTIVE FIX ───────────────────────────────────
+  const DARK_CSS = `
+    html {
+      filter: invert(1) hue-rotate(180deg) !important;
+      background: #111 !important;
+    }
+
+    /* fix lại ảnh, video, canvas, iframe — không muốn invert 2 lần */
+    img,
+    picture,
+    video,
+    canvas,
+    iframe,
+    svg image,
+    [style*="background-image"] {
+      filter: invert(1) hue-rotate(180deg) !important;
+    }
+
+    /* giữ màu logo SVG inline */
+    svg:not([data-noob-skip]) {
+      filter: invert(1) hue-rotate(180deg) !important;
+    }
+
+    /* scrollbar tối */
+    ::-webkit-scrollbar {
+      background: #1a1a1a !important;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #444 !important;
+      border-radius: 4px !important;
+    }
+
+    /* selection highlight */
+    ::selection {
+      background: #4a90d9 !important;
+      color: #fff !important;
+    }
+  `;
+
+  // ── STATE ────────────────────────────────────────────────────────────
+  let enabled = GM_getValue(STORAGE_KEY, true); // mặc định bật
+
+  // ── INJECT / REMOVE STYLE ────────────────────────────────────────────
+  function applyDark() {
+    if (document.getElementById(STYLE_ID)) return;
+    const s = document.createElement('style');
+    s.id = STYLE_ID;
+    s.textContent = DARK_CSS;
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function removeDark() {
+    const s = document.getElementById(STYLE_ID);
+    if (s) s.remove();
+  }
+
+  function sync() {
+    enabled ? applyDark() : removeDark();
+    GM_setValue(STORAGE_KEY, enabled);
+    showToast(enabled ? '🌙 dark on' : '☀️ dark off');
+  }
+
+  // ── TOGGLE BUTTON ────────────────────────────────────────────────────
+  function injectButton() {
+    if (document.getElementById('__noob_btn__')) return;
+
+    const btn = document.createElement('div');
+    btn.id = '__noob_btn__';
+    btn.textContent = enabled ? '🌙' : '☀️';
+    Object.assign(btn.style, {
+      position:     'fixed',
+      bottom:       '20px',
+      right:        '20px',
+      zIndex:       '2147483647',
+      width:        '40px',
+      height:       '40px',
+      borderRadius: '50%',
+      background:   '#222',
+      color:        '#fff',
+      fontSize:     '20px',
+      display:      'flex',
+      alignItems:   'center',
+      justifyContent: 'center',
+      cursor:       'pointer',
+      boxShadow:    '0 2px 8px rgba(0,0,0,0.5)',
+      userSelect:   'none',
+      // counter-invert button vì nó nằm trong html bị invert
+      filter:       'invert(1) hue-rotate(180deg)',
+      transition:   'transform 0.15s',
+    });
+
+    btn.addEventListener('click', () => {
+      enabled = !enabled;
+      btn.textContent = enabled ? '🌙' : '☀️';
+      sync();
+    });
+
+    btn.addEventListener('mouseenter', () => btn.style.transform = 'scale(1.15)');
+    btn.addEventListener('mouseleave', () => btn.style.transform = 'scale(1)');
+
+    document.body.appendChild(btn);
+  }
+
+  // ── TOAST ────────────────────────────────────────────────────────────
+  function showToast(msg) {
+    const old = document.getElementById('__noob_toast__');
+    if (old) old.remove();
+
+    const t = document.createElement('div');
+    t.id = '__noob_toast__';
+    t.textContent = msg;
+    Object.assign(t.style, {
+      position:     'fixed',
+      bottom:       '72px',
+      right:        '20px',
+      zIndex:       '2147483647',
+      background:   '#333',
+      color:        '#eee',
+      padding:      '6px 14px',
+      borderRadius: '8px',
+      fontSize:     '13px',
+      opacity:      '1',
+      transition:   'opacity 0.4s',
+      filter:       'invert(1) hue-rotate(180deg)',
+      pointerEvents: 'none',
+    });
+
+    document.body.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; }, 1500);
+    setTimeout(() => { t.remove(); }, 2000);
+  }
+
+  // ── KEYBOARD SHORTCUT: Alt + D ───────────────────────────────────────
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey && e.code === TOGGLE_KEY) {
+      enabled = !enabled;
+      const btn = document.getElementById('__noob_btn__');
+      if (btn) btn.textContent = enabled ? '🌙' : '☀️';
+      sync();
+    }
+  });
+
+  // ── BOOT ─────────────────────────────────────────────────────────────
+  // inject CSS ngay document-start trước khi paint
+  if (enabled) applyDark();
+
+  // inject button sau khi DOM ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectButton);
+  } else {
+    injectButton();
+  }
+
+  // MutationObserver giữ style không bị trang xóa
+  const guardian = new MutationObserver(() => {
+    if (enabled && !document.getElementById(STYLE_ID)) applyDark();
+  });
+
+  const startGuard = () => {
+    guardian.observe(document.head || document.documentElement, {
+      childList: true, subtree: false
+    });
+  };
+
+  if (document.head) startGuard();
+  else document.addEventListener('DOMContentLoaded', startGuard);
+
+})();
